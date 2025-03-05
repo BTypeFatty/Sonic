@@ -12,7 +12,7 @@ decode_chunk_size: 8
 motion_bucket_scale: 1.0
 image_size: 512
 area: 1.1
-frame_num: 10000
+frame_num: 1000
 step: 2
 overlap: 0
 shift_offset: 7
@@ -24,7 +24,7 @@ ip_audio_scale: 1.0
 noise_aug_strength: 0.00
 window_width: 175
 window_height: 150
-batch_size: 100
+batch_size: 10
 
 use_interframe: True
 
