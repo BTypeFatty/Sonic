@@ -163,8 +163,6 @@ def image_audio_to_tensor(align_instance, feature_extractor, image_path, audio_p
     clip_image = clip_processor(
             images=imSrc.resize((224, 224), Image.LANCZOS), return_tensors="pt"
         ).pixel_values[0]
-    print(f"Type of window: {type(window)}, Value of window: {window}")
-    window = int(window)
     audio_input, audio_len = get_audio_feature(audio_path, feature_extractor, batch_size, window)
 
     audio_len = min(limit, audio_len)
