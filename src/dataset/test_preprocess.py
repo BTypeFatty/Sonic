@@ -77,22 +77,45 @@ def process_bbox(bbox, expand_radio, height, width):
     return processed_bbox
 
 
-def get_audio_feature(audio_path, feature_extractor):
+# def get_audio_feature(audio_path, feature_extractor, window = 750*640):
+#     audio_input, sampling_rate = librosa.load(audio_path, sr=16000)
+#     assert sampling_rate == 16000
+
+#     audio_features = []
+#     for i in range(0, len(audio_input), window):
+#         audio_feature = feature_extractor(audio_input[i:i+window], 
+#                                         sampling_rate=sampling_rate, 
+#                                         return_tensors="pt", 
+#                                         ).input_features
+#         audio_features.append(audio_feature)
+#     audio_features = torch.cat(audio_features, dim=-1)
+#     return audio_features, len(audio_input) // 640
+
+def get_audio_feature(audio_path, feature_extractor, batch_size=10, window = 750 * 640):
     audio_input, sampling_rate = librosa.load(audio_path, sr=16000)
     assert sampling_rate == 16000
 
     audio_features = []
-    window = 750*640
-    for i in range(0, len(audio_input), window):
-        audio_feature = feature_extractor(audio_input[i:i+window], 
-                                        sampling_rate=sampling_rate, 
-                                        return_tensors="pt", 
-                                        ).input_features
-        audio_features.append(audio_feature)
+    num_windows = len(audio_input) // window
+
+    for batch_idx in range(0, num_windows, batch_size):
+        batch_audio_features = []
+        for i in range(batch_idx, min(batch_idx + batch_size, num_windows)):
+            start = i * window
+            end = start + window
+            audio_feature = feature_extractor(audio_input[start:end], 
+                                            sampling_rate=sampling_rate, 
+                                            return_tensors="pt", 
+                                            ).input_features
+            batch_audio_features.append(audio_feature)
+        batch_audio_features = torch.cat(batch_audio_features, dim=0)
+        audio_features.append(batch_audio_features)
+    
     audio_features = torch.cat(audio_features, dim=-1)
     return audio_features, len(audio_input) // 640
 
-def image_audio_to_tensor(align_instance, feature_extractor, image_path, audio_path, limit=100, image_size=512, area=1.25):
+
+def image_audio_to_tensor(align_instance, feature_extractor, image_path, audio_path, limit=100, image_size=512, area=1.25, batch_size=10, window=750*640):
     
     clip_processor = CLIPImageProcessor()
     
@@ -140,7 +163,7 @@ def image_audio_to_tensor(align_instance, feature_extractor, image_path, audio_p
     clip_image = clip_processor(
             images=imSrc.resize((224, 224), Image.LANCZOS), return_tensors="pt"
         ).pixel_values[0]
-    audio_input, audio_len = get_audio_feature(audio_path, feature_extractor)
+    audio_input, audio_len = get_audio_feature(audio_path, feature_extractor, batch_size, window)
 
     audio_len = min(limit, audio_len)
 

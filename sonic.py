@@ -289,7 +289,7 @@ class Sonic():
         imSrc_ = Image.open(image_path).convert('RGB')
         raw_w, raw_h = imSrc_.size
 
-        test_data = image_audio_to_tensor(self.face_det, self.feature_extractor, image_path, audio_path, limit=config.frame_num, image_size=min_resolution, area=config.area)
+        test_data = image_audio_to_tensor(self.face_det, self.feature_extractor, image_path, audio_path, limit=config.frame_num, image_size=min_resolution, area=config.area, batch_size=config.batch_size, window=config.window)
         if test_data is None:
             return -1
         height, width = test_data['ref_img'].shape[-2:]
