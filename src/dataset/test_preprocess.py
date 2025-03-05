@@ -91,9 +91,13 @@ def process_bbox(bbox, expand_radio, height, width):
 #     audio_features = torch.cat(audio_features, dim=-1)
 #     return audio_features, len(audio_input) // 640
 
-def get_audio_feature(audio_path, feature_extractor, batch_size=10, window = 750 * 640):
+def get_audio_feature(audio_path, feature_extractor, batch_size=10, window=750 * 640):
     audio_input, sampling_rate = librosa.load(audio_path, sr=16000)
     assert sampling_rate == 16000
+
+    print(f"Length of audio_input: {len(audio_input)}")
+    print(f"Window size: {window}")
+    print(f"Number of windows: {len(audio_input) // window}")
 
     audio_features = []
     num_windows = len(audio_input) // window
@@ -108,10 +112,17 @@ def get_audio_feature(audio_path, feature_extractor, batch_size=10, window = 750
                                             return_tensors="pt", 
                                             ).input_features
             batch_audio_features.append(audio_feature)
-        batch_audio_features = torch.cat(batch_audio_features, dim=0)
-        audio_features.append(batch_audio_features)
-    
-    audio_features = torch.cat(audio_features, dim=-1)
+        if batch_audio_features:
+            batch_audio_features = torch.cat(batch_audio_features, dim=0)
+            audio_features.append(batch_audio_features)
+        else:
+            print(f"Batch {batch_idx} has no audio features")
+
+    if audio_features:
+        audio_features = torch.cat(audio_features, dim=-1)
+    else:
+        print("No audio features to concatenate")
+
     return audio_features, len(audio_input) // 640
 
 
