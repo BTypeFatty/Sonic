@@ -32,6 +32,8 @@ def test(pipe, config, whisper, audio2token, audio2bucket, image_encoder, width,
     clip_img = batch['clip_images'].to(device_encoder)
     face_mask = batch['face_mask']
 
+    image_encoder.to(device_encoder)  # 确保模型在cuda:1
+    clip_img = clip_img.to(device_encoder)  # 确保数据也在cuda:1
     image_embeds = image_encoder(clip_img).image_embeds
 
     audio_feature = batch['audio_feature'].to(device_audio)
