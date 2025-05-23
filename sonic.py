@@ -198,12 +198,6 @@ class Sonic():
         device_encoder = self.device_encoder
         device_audio = self.device_whisper
 
-        test_data['ref_img'] = test_data['ref_img'].to(device_main)
-        test_data['face_mask'] = test_data['face_mask'].to(device_main)
-        test_data['clip_images'] = test_data['clip_images'].to(device_encoder)
-        test_data['audio_feature'] = test_data['audio_feature'].to(device_audio)
-
-
         config = self.config
         seed_everything(seed if seed else config.seed)
 
@@ -220,14 +214,15 @@ class Sonic():
         if test_data is None:
             return -1
 
+
         for k, v in test_data.items():
             if isinstance(v, torch.Tensor):
                 test_data[k] = v.unsqueeze(0)
 
-        test_data['ref_img'] = test_data['ref_img'].to(self.device)
-        test_data['clip_images'] = test_data['clip_images'].to(self.device_encoder)
-        test_data['face_mask'] = test_data['face_mask'].to(self.device)
-        test_data['audio_feature'] = test_data['audio_feature'].to(self.device_whisper)
+        test_data['ref_img'] = test_data['ref_img'].to(device_main)
+        test_data['face_mask'] = test_data['face_mask'].to(device_main)
+        test_data['clip_images'] = test_data['clip_images'].to(device_encoder)
+        test_data['audio_feature'] = test_data['audio_feature'].to(device_audio)
 
         height, width = test_data['ref_img'].shape[-2:]
         resolution = f'{raw_w//2*2}x{raw_h//2*2}' if keep_resolution else f'{width}x{height}'
