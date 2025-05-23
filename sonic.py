@@ -20,8 +20,8 @@ from src.models.audio_adapter.audio_to_bucket import Audio2bucketModel
 from src.utils.RIFE.RIFE_HDv3 import RIFEModel
 from src.dataset.face_align.align import AlignImage
 
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 
 def test(
     pipe,
@@ -42,7 +42,7 @@ def test(
     face_mask = batch['face_mask']
     image_embeds = image_encoder(
         clip_img
-            ).image_embeds
+    ).image_embeds
 
     audio_feature = batch['audio_feature']
     audio_len = batch['audio_len']
@@ -66,15 +66,11 @@ def test(
     last_audio_prompts = torch.cat(last_audio_prompts, dim=1)
     last_audio_prompts = last_audio_prompts[:,:audio_len*2]
     last_audio_prompts = torch.cat([torch.zeros_like(last_audio_prompts[:,:24]), last_audio_prompts, torch.zeros_like(last_audio_prompts[:,:26])], 1)
-
-
     ref_tensor_list = []
     audio_tensor_list = []
     uncond_audio_tensor_list = []
     motion_buckets = []
     for i in tqdm(range(audio_len//step)):
-
-
         audio_clip = audio_prompts[:,i*2*step:i*2*step+10].unsqueeze(0)
         audio_clip_for_bucket = last_audio_prompts[:,i*2*step:i*2*step+50].unsqueeze(0)
         motion_bucket = audio2bucket(audio_clip_for_bucket, image_embeds)
@@ -129,12 +125,17 @@ class Sonic():
     def __init__(self, 
                  device_id=0,
                  enable_interpolate_frame=True,
-                 ):
-        
+                 device_ids=None):
         config = self.config
         config.use_interframe = enable_interpolate_frame
 
-        device = 'cuda:{}'.format(device_id) if device_id > -1 else 'cpu'
+        # 多卡支持
+        if device_ids is None:
+            device = f'cuda:{device_id}' if device_id >= 0 else "cpu"
+            self.device = device
+        else:
+            device = f'cuda:{device_ids[0]}'
+            self.device = device
 
         config.pretrained_model_name_or_path = os.path.join(BASE_DIR, config.pretrained_model_name_or_path)
 
@@ -142,21 +143,32 @@ class Sonic():
             config.pretrained_model_name_or_path, 
             subfolder="vae",
             variant="fp16")
-        
+
         val_noise_scheduler = EulerDiscreteScheduler.from_pretrained(
             config.pretrained_model_name_or_path, 
             subfolder="scheduler")
-        
+
         image_encoder = CLIPVisionModelWithProjection.from_pretrained(
             config.pretrained_model_name_or_path, 
             subfolder="image_encoder",
             variant="fp16")
+
         unet = UNetSpatioTemporalConditionModel.from_pretrained(
             config.pretrained_model_name_or_path,
             subfolder="unet",
             variant="fp16")
         add_ip_adapters(unet, [32], [config.ip_audio_scale])
-        
+
+        # ===多卡关键代码===
+        if device_ids is not None and len(device_ids) > 1:
+            unet = torch.nn.DataParallel(unet, device_ids=device_ids)
+        unet = unet.to(device)
+        # 其它大模型如 vae/image_encoder 如需多卡同理，可 DataParallel 包裹
+        self.unet = unet
+        self.vae = vae.to(device)
+        self.image_encoder = image_encoder.to(device)
+        self.scheduler = val_noise_scheduler
+
         audio2token = AudioProjModel(seq_len=10, blocks=5, channels=384, intermediate_dim=1024, output_dim=1024, context_tokens=32).to(device)
         audio2bucket = Audio2bucketModel(seq_len=50, blocks=1, channels=384, clip_channels=1024, intermediate_dim=1024, output_dim=1, context_tokens=2).to(device)
 
@@ -164,11 +176,18 @@ class Sonic():
         audio2token_checkpoint_path = os.path.join(BASE_DIR, config.audio2token_checkpoint_path)
         audio2bucket_checkpoint_path = os.path.join(BASE_DIR, config.audio2bucket_checkpoint_path)
 
-        unet.load_state_dict(
-            torch.load(unet_checkpoint_path, map_location="cpu"),
-            strict=True,
-        )
-        
+        # 加载权重
+        if isinstance(self.unet, torch.nn.DataParallel):
+            self.unet.module.load_state_dict(
+                torch.load(unet_checkpoint_path, map_location="cpu"),
+                strict=True,
+            )
+        else:
+            self.unet.load_state_dict(
+                torch.load(unet_checkpoint_path, map_location="cpu"),
+                strict=True,
+            )
+
         audio2token.load_state_dict(
             torch.load(audio2token_checkpoint_path, map_location="cpu"),
             strict=True,
@@ -178,7 +197,6 @@ class Sonic():
             torch.load(audio2bucket_checkpoint_path, map_location="cpu"),
             strict=True,
         )
-        
 
         if config.weight_dtype == "fp16":
             weight_dtype = torch.float16
@@ -192,12 +210,11 @@ class Sonic():
             )
 
         whisper = WhisperModel.from_pretrained(os.path.join(BASE_DIR, 'checkpoints/whisper-tiny/')).to(device).eval()
-        
         whisper.requires_grad_(False)
 
         self.feature_extractor = AutoFeatureExtractor.from_pretrained(os.path.join(BASE_DIR, 'checkpoints/whisper-tiny/'))
 
-        det_path = os.path.join(BASE_DIR, os.path.join(BASE_DIR, 'checkpoints/yoloface_v5m.pt'))
+        det_path = os.path.join(BASE_DIR, 'checkpoints/yoloface_v5m.pt')
         self.face_det = AlignImage(device, det_path=det_path)
         if config.use_interframe:
             rife = RIFEModel(device=device)

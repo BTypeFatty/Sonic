@@ -1,8 +1,6 @@
 import os
 import argparse
 from sonic import Sonic
-pipe = Sonic(0)
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument('image_path')
@@ -11,9 +9,12 @@ parser.add_argument('output_path')
 parser.add_argument('--dynamic_scale', type=float, default=1.0)
 parser.add_argument('--crop', action='store_true')
 parser.add_argument('--seed', type=int, default=None)
+parser.add_argument('--gpus', type=str, default="0", help="多卡如 0,1,2")
 
 args = parser.parse_args()
 
+device_ids = [int(x) for x in args.gpus.split(",")]
+pipe = Sonic(device_id=device_ids[0], device_ids=device_ids)
 
 face_info = pipe.preprocess(args.image_path, expand_ratio=0.5)
 print(face_info)
