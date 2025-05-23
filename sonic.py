@@ -59,18 +59,16 @@ def test(pipe, config, whisper, audio2token, audio2bucket, image_encoder, width,
         audio_prompts.append(audio_prompt)
         last_audio_prompts.append(last_audio_prompt)
 
-    audio_prompts = torch.cat(audio_prompts, dim=1)[:, :audio_len * 2]
     audio_prompts = torch.cat([
-        torch.zeros_like(audio_prompts[:, :4]),
-        audio_prompts,
-        torch.zeros_like(audio_prompts[:, :6])
+    torch.zeros_like(audio_prompts[:, :4]).to(device_audio),
+    audio_prompts,
+    torch.zeros_like(audio_prompts[:, :6]).to(device_audio)
     ], dim=1)
 
-    last_audio_prompts = torch.cat(last_audio_prompts, dim=1)[:, :audio_len * 2]
     last_audio_prompts = torch.cat([
-        torch.zeros_like(last_audio_prompts[:, :24]),
+        torch.zeros_like(last_audio_prompts[:, :24]).to(device_audio),
         last_audio_prompts,
-        torch.zeros_like(last_audio_prompts[:, :26])
+        torch.zeros_like(last_audio_prompts[:, :26]).to(device_audio)
     ], dim=1)
 
     ref_tensor_list = []
@@ -83,7 +81,7 @@ def test(pipe, config, whisper, audio2token, audio2bucket, image_encoder, width,
         audio_clip_for_bucket = last_audio_prompts[:, i * 2 * step:i * 2 * step + 50].unsqueeze(0).to(device_audio)
 
         motion_bucket = audio2bucket(audio_clip_for_bucket, image_embeds.to(device_audio))
-        motion_bucket = motion_bucket * 16 + 16
+        motion_bucket = motion_bucket.to(device_main) * 16 + 16
         motion_buckets.append(motion_bucket[0].to(device_main))
 
         cond_audio_clip = audio2token(audio_clip).squeeze(0).to(device_main)
@@ -195,6 +193,17 @@ class Sonic():
 
     @torch.no_grad()
     def process(self, image_path, audio_path, output_path, min_resolution=512, inference_steps=25, dynamic_scale=1.0, keep_resolution=False, seed=None):
+
+        device_main = self.device
+        device_encoder = self.device_encoder
+        device_audio = self.device_whisper
+
+        test_data['ref_img'] = test_data['ref_img'].to(device_main)
+        test_data['face_mask'] = test_data['face_mask'].to(device_main)
+        test_data['clip_images'] = test_data['clip_images'].to(device_encoder)
+        test_data['audio_feature'] = test_data['audio_feature'].to(device_audio)
+
+
         config = self.config
         seed_everything(seed if seed else config.seed)
 
