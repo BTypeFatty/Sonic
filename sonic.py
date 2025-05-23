@@ -58,6 +58,7 @@ def test(pipe, config, whisper, audio2token, audio2bucket, image_encoder, width,
         audio_prompt = torch.stack(audio_prompt, dim=2)
         audio_prompts.append(audio_prompt)
         last_audio_prompts.append(last_audio_prompt)
+    audio_prompts = torch.cat(audio_prompts, dim=1)[:, :audio_len * 2]
 
     audio_prompts = torch.cat([
     torch.zeros_like(audio_prompts[:, :4]).to(device_audio),
