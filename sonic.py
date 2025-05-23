@@ -22,48 +22,65 @@ from src.dataset.face_align.align import AlignImage
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+def test(pipe, config, whisper, audio2token, audio2bucket, image_encoder, width, height, batch,
+         device_audio, device_encoder, device_main):
+    
+    # 模型设备对齐
+    whisper.to(device_audio)
+    audio2token.to(device_audio)
+    audio2bucket.to(device_audio)
+    image_encoder.to(device_encoder)
 
-def test(pipe, config, whisper, audio2token, audio2bucket, image_encoder, width, height, batch, device_audio, device_encoder, device_main):
+    # 输入 batch 数据转移到对应设备
     for k, v in batch.items():
         if isinstance(v, torch.Tensor):
             batch[k] = v.to(device_main).float()
 
-    ref_img = batch['ref_img']
+    ref_img = batch['ref_img'].to(device_main)
+    face_mask = batch['face_mask'].to(device_main)
     clip_img = batch['clip_images'].to(device_encoder)
-    face_mask = batch['face_mask']
 
-    image_encoder.to(device_encoder)  # 确保模型在cuda:1
-    clip_img = clip_img.to(device_encoder)  # 确保数据也在cuda:1
+    # 图像嵌入特征
     image_embeds = image_encoder(clip_img).image_embeds
 
+    # 音频特征准备
     audio_feature = batch['audio_feature'].to(device_audio)
     audio_len = batch['audio_len']
     step = int(config.step)
-
     window = 3000
+
     audio_prompts = []
     last_audio_prompts = []
     for i in range(0, audio_feature.shape[-1], window):
-        audio_prompt = whisper.encoder(audio_feature[:, :, i:i+window], output_hidden_states=True).hidden_states
-        last_audio_prompt = whisper.encoder(audio_feature[:, :, i:i+window]).last_hidden_state
-        last_audio_prompt = last_audio_prompt.unsqueeze(-2)
+        window_feat = audio_feature[:, :, i:i+window]
+        audio_prompt = whisper.encoder(window_feat, output_hidden_states=True).hidden_states
+        last_audio_prompt = whisper.encoder(window_feat).last_hidden_state.unsqueeze(-2)
         audio_prompt = torch.stack(audio_prompt, dim=2)
         audio_prompts.append(audio_prompt)
         last_audio_prompts.append(last_audio_prompt)
 
-    audio_prompts = torch.cat(audio_prompts, dim=1)[:, :audio_len*2]
-    audio_prompts = torch.cat([torch.zeros_like(audio_prompts[:, :4]), audio_prompts, torch.zeros_like(audio_prompts[:, :6])], dim=1)
+    audio_prompts = torch.cat(audio_prompts, dim=1)[:, :audio_len * 2]
+    audio_prompts = torch.cat([
+        torch.zeros_like(audio_prompts[:, :4]),
+        audio_prompts,
+        torch.zeros_like(audio_prompts[:, :6])
+    ], dim=1)
 
-    last_audio_prompts = torch.cat(last_audio_prompts, dim=1)[:, :audio_len*2]
-    last_audio_prompts = torch.cat([torch.zeros_like(last_audio_prompts[:, :24]), last_audio_prompts, torch.zeros_like(last_audio_prompts[:, :26])], dim=1)
+    last_audio_prompts = torch.cat(last_audio_prompts, dim=1)[:, :audio_len * 2]
+    last_audio_prompts = torch.cat([
+        torch.zeros_like(last_audio_prompts[:, :24]),
+        last_audio_prompts,
+        torch.zeros_like(last_audio_prompts[:, :26])
+    ], dim=1)
 
     ref_tensor_list = []
     audio_tensor_list = []
     uncond_audio_tensor_list = []
     motion_buckets = []
+
     for i in tqdm(range(audio_len // step)):
-        audio_clip = audio_prompts[:, i*2*step:i*2*step+10].unsqueeze(0).to(device_audio)
-        audio_clip_for_bucket = last_audio_prompts[:, i*2*step:i*2*step+50].unsqueeze(0).to(device_audio)
+        audio_clip = audio_prompts[:, i * 2 * step:i * 2 * step + 10].unsqueeze(0).to(device_audio)
+        audio_clip_for_bucket = last_audio_prompts[:, i * 2 * step:i * 2 * step + 50].unsqueeze(0).to(device_audio)
 
         motion_bucket = audio2bucket(audio_clip_for_bucket, image_embeds.to(device_audio))
         motion_bucket = motion_bucket * 16 + 16
@@ -76,6 +93,7 @@ def test(pipe, config, whisper, audio2token, audio2bucket, image_encoder, width,
         audio_tensor_list.append(cond_audio_clip[0])
         uncond_audio_tensor_list.append(uncond_audio_clip[0])
 
+    # 生成视频
     video = pipe(
         ref_img,
         clip_img,
@@ -102,8 +120,7 @@ def test(pipe, config, whisper, audio2token, audio2bucket, image_encoder, width,
     ).frames
 
     video = (video * 0.5 + 0.5).clamp(0, 1)
-    video = torch.cat([video.to(device_main)], dim=0).cpu()
-    return video
+    return video.to(device_main).cpu()
 
 class Sonic():
     config_file = os.path.join(BASE_DIR, 'config/inference/sonic.yaml')
