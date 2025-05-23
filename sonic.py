@@ -205,8 +205,20 @@ class Sonic():
         resolution = f'{raw_w//2*2}x{raw_h//2*2}' if keep_resolution else f'{width}x{height}'
 
         from sonic import test
-        video = test(self.pipe, config, self.whisper, self.audio2token, self.audio2bucket, self.image_encoder, width, height, test_data)
-
+        video = test(
+            self.pipe,
+            config,
+            self.whisper,
+            self.audio2token,
+            self.audio2bucket,
+            self.image_encoder,
+            width,
+            height,
+            test_data,
+            self.device_audio,
+            self.device_encoder,
+            self.device
+        )
         if config.use_interframe:
             out = video.to(self.device)
             results = []
